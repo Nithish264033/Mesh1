@@ -520,6 +520,11 @@ class ChatViewModel(
             }
             // Send private message
             val recipientNickname = meshService.getPeerNicknames()[selectedPeer]
+            
+            // 🔥 NEW: Also send to ESP32 bridge directly
+            meshService.esp32BridgeManager.sendRawMessage(content)
+            Log.d("ChatViewModel", "🔥 Sent private to ESP32: '$content'")
+            
             privateChatManager.sendPrivateMessage(
                 content, 
                 selectedPeer, 
@@ -548,6 +553,10 @@ class ChatViewModel(
                     mentions = if (mentions.isNotEmpty()) mentions else null,
                     channel = currentChannelValue
                 )
+
+                // 🔥 NEW: Also send to ESP32 bridge directly
+                meshService.esp32BridgeManager.sendRawMessage(content)
+                Log.d("ChatViewModel", "🔥 Sent to ESP32: '$content'")
 
                 if (currentChannelValue != null) {
                     channelManager.addChannelMessage(currentChannelValue, message, meshService.myPeerID)

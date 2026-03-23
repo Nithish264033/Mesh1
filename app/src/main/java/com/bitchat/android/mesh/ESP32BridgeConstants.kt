@@ -9,13 +9,13 @@ import java.util.UUID
  */
 object ESP32BridgeConstants {
     // ESP32 bridge Service UUID — phones use F47B5E2D..., ESP32 uses this:
-    val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890AB")
+    val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890ab")
 
     // Phone writes packets to ESP32 via this characteristic
-    val WRITE_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890CD")
+    val WRITE_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890cd")
 
     // ESP32 notifies phone with LoRa-received packets via this characteristic
-    val NOTIFY_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890EF")
+    val NOTIFY_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890ef")
 
     // Manufacturer data string that ESP32 advertises as fallback identification
     const val MANUFACTURER_DATA_STRING = "ESP32_LORA_NODE"

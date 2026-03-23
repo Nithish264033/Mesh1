@@ -99,18 +99,38 @@ class ESP32BridgeManager(
     }
 
     /**
-     * Send a bitchat packet to ESP32 for LoRa relay.
+     * Send raw message directly - bypass all packet encoding
+     */
+    fun sendRawMessage(message: String) {
+        Log.d(TAG, "📨 sendRawMessage: '$message'")
+        Log.d(TAG, "🔍 Connection: writeChar=${writeCharacteristic != null}, gatt=${connectedGatt != null}")
+        
+        if (writeCharacteristic != null && connectedGatt != null) {
+            val data = message.toByteArray()
+            Log.d(TAG, "📤 Sending raw: ${data.size} bytes, content: '${data.contentToString()}'")
+            writeToESP32(data)
+        } else {
+            Log.e(TAG, "❌ Cannot send raw message - not connected")
+        }
+    }
+
+    /**
+     * Forward a bitchat packet to ESP32 for LoRa relay.
      * The packet is already in binary format.
      */
     fun forwardToESP32(packet: BitchatPacket) {
+        Log.d(TAG, "🔄 forwardToESP32 called with packet type: ${packet.type}")
         val encoded = BinaryProtocol.encode(packet) ?: run {
             Log.w(TAG, "Failed to encode packet for ESP32")
             return
         }
+        Log.d(TAG, "📦 Packet encoded to ${encoded.size} bytes")
 
         if (writeCharacteristic != null && connectedGatt != null) {
+            Log.d(TAG, "✅ ESP32 connected, writing immediately")
             writeToESP32(encoded)
         } else {
+            Log.w(TAG, "⚠️ ESP32 not connected, queuing packet (size=${encoded.size})")
             // Queue for later if not connected
             if (pendingPackets.size < 50) {
                 pendingPackets.add(encoded)
@@ -119,7 +139,36 @@ class ESP32BridgeManager(
     }
 
     /**
-     * Send LoRa configuration to the connected ESP32.
+     * Test function - send a simple test message to ESP32
+     */
+    fun sendTestMessage() {
+        Log.d(TAG, "🧪 Sending test message to ESP32")
+        Log.d(TAG, "🔍 Connection state: writeChar=${writeCharacteristic != null}, gatt=${connectedGatt != null}")
+        val testData = "Hello ESP32".toByteArray()
+        Log.d(TAG, "📤 Test data: ${testData.contentToString()}")
+        writeToESP32(testData)
+    }
+    
+    /**
+     * Force send raw data test
+     */
+    fun forceSendTest() {
+        Log.d(TAG, "💥 FORCE SEND TEST")
+        Log.d(TAG, "writeCharacteristic: $writeCharacteristic")
+        Log.d(TAG, "connectedGatt: $connectedGatt")
+        Log.d(TAG, "isConnected: ${isConnected()}")
+        
+        if (writeCharacteristic != null && connectedGatt != null) {
+            Log.d(TAG, "✅ Both available, sending...")
+            val data = byteArrayOf(0x48, 0x65, 0x6C, 0x6C, 0x6F) // "Hello" in bytes
+            writeToESP32(data)
+        } else {
+            Log.e(TAG, "❌ Cannot send - missing components")
+        }
+    }
+
+    /**
+     * Send LoRa configuration to connected ESP32.
      * The config is sent as a special command packet (first byte = 0xCF).
      * The ESP32 firmware recognizes this and applies the LoRa settings.
      */
@@ -136,7 +185,11 @@ class ESP32BridgeManager(
     /**
      * Check if an ESP32 bridge is currently connected
      */
-    fun isConnected(): Boolean = deviceTracker.hasConnectedBridge()
+    fun isConnected(): Boolean {
+        val connected = writeCharacteristic != null && connectedGatt != null
+        Log.d(TAG, "isConnected() check: writeChar=${writeCharacteristic != null}, gatt=${connectedGatt != null}, result=$connected")
+        return connected
+    }
 
     /**
      * Get number of discovered ESP32 bridges
@@ -356,6 +409,7 @@ class ESP32BridgeManager(
             }
 
             val service = gatt.getService(ESP32BridgeConstants.SERVICE_UUID)
+            Log.d(TAG, "Service: $service")
             if (service == null) {
                 Log.e(TAG, "ESP32 service not found!")
                 return
@@ -363,8 +417,20 @@ class ESP32BridgeManager(
 
             // Get WRITE characteristic
             writeCharacteristic = service.getCharacteristic(ESP32BridgeConstants.WRITE_CHARACTERISTIC_UUID)
+            Log.d(TAG, "Write Characteristic: $writeCharacteristic")
             if (writeCharacteristic == null) {
                 Log.e(TAG, "ESP32 WRITE characteristic not found!")
+                return
+            }
+            
+            // Check if characteristic supports WRITE
+            val props = writeCharacteristic?.properties ?: 0
+            val canWrite = (props and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
+                    || (props and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0
+            Log.d(TAG, "CanWrite: $canWrite, Properties: $props")
+            
+            if (!canWrite) {
+                Log.e(TAG, "Write characteristic does not support write operations!")
                 return
             }
 
@@ -402,6 +468,15 @@ class ESP32BridgeManager(
             }
         }
 
+        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            Log.d(TAG, "Write status: $status (0=SUCCESS)")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "✅ Data successfully written to ESP32")
+            } else {
+                Log.e(TAG, "❌ Write failed with status: $status")
+            }
+        }
+
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
@@ -435,19 +510,29 @@ class ESP32BridgeManager(
         val char = writeCharacteristic ?: return
 
         try {
+            Log.d(TAG, "📤 Attempting to write ${data.size} bytes to ESP32")
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeCharacteristic(
+                val status = gatt.writeCharacteristic(
                     char, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 )
+                Log.d(TAG, "writeCharacteristic() called, status=$status, len=${data.size}")
+                if (status != BluetoothGatt.GATT_SUCCESS) {
+                    Log.e(TAG, "❌ Failed to initiate write to ESP32, status: $status")
+                }
             } else {
                 @Suppress("DEPRECATION")
                 char.value = data
                 @Suppress("DEPRECATION")
                 char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 @Suppress("DEPRECATION")
-                gatt.writeCharacteristic(char)
+                val success = gatt.writeCharacteristic(char)
+                Log.d(TAG, "writeCharacteristic() called, ok=$success, len=${data.size}")
+                
+                if (!success) {
+                    Log.e(TAG, "❌ Failed to initiate write to ESP32")
+                }
             }
-            Log.d(TAG, "Sent ${data.size} bytes to ESP32 for LoRa relay")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write to ESP32: ${e.message}")
         }

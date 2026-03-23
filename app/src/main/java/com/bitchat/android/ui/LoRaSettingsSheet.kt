@@ -347,6 +347,29 @@ fun LoRaSettingsSheet(
 
             // Apply button
             item {
+                // Debug Test Button
+                Button(
+                    onClick = {
+                        bridgeManager?.forceSendTest()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isConnected,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                        disabledContainerColor = colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        "🔥 TEST ESP32 CONNECTION",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
+                
+                Spacer(Modifier.height(8.dp))
+
                 Button(
                     onClick = {
                         LoRaConfigPreferences.save(config)

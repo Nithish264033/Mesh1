@@ -133,8 +133,7 @@ object AppConstants {
 
     /** ESP32 LoRa bridge constants — see ESP32BridgeConstants.kt for full details */
     object ESP32Bridge {
-        val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890AB")
-        val WRITE_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890CD")
-        val NOTIFY_CHARACTERISTIC_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890EF")
+        // These are now defined in ESP32BridgeConstants.kt to avoid duplication
+        // All ESP32 bridge communication uses ESP32BridgeConstants
     }
 }

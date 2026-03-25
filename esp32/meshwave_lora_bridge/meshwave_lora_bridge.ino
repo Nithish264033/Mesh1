@@ -59,7 +59,8 @@
 // ===================== PROTOCOL CONSTANTS =====================
 #define MAX_BLE_PACKET_SIZE  512    // Max packet from phone
 #define MAX_LORA_PACKET_SIZE 255    // LoRa max payload
-#define LORA_FRAGMENT_HEADER 5      // 4 bytes ID + 1 byte index/total
+#define LORA_FRAGMENT_MAGIC  0xF7   // Explicit marker for fragmented LoRa packets
+#define LORA_FRAGMENT_HEADER 6      // 1 byte magic + 4 bytes ID + 1 byte index/total
 #define MAX_LORA_DATA        (MAX_LORA_PACKET_SIZE - LORA_FRAGMENT_HEADER)
 #define DEDUP_CACHE_SIZE     200    // Circular buffer for dedup
 #define DEDUP_EXPIRY_MS      300000 // 5 minutes
@@ -187,7 +188,7 @@ uint32_t generateFragmentId() {
 
 /**
  * Send data via LoRa, fragmenting if necessary.
- * Fragment header: [4 bytes ID][1 byte: high nibble=index, low nibble=total]
+ * Fragment header: [1 byte magic][4 bytes ID][1 byte: high nibble=index, low nibble=total]
  */
 void sendViaLoRa(const uint8_t* data, size_t len) {
   if (len <= MAX_LORA_PACKET_SIZE) {
@@ -214,11 +215,12 @@ void sendViaLoRa(const uint8_t* data, size_t len) {
     size_t chunkSize = min((size_t)MAX_LORA_DATA, len - offset);
 
     uint8_t header[LORA_FRAGMENT_HEADER];
-    header[0] = (fragId >> 24) & 0xFF;
-    header[1] = (fragId >> 16) & 0xFF;
-    header[2] = (fragId >> 8) & 0xFF;
-    header[3] = fragId & 0xFF;
-    header[4] = ((i & 0x0F) << 4) | (totalFragments & 0x0F);
+    header[0] = LORA_FRAGMENT_MAGIC;
+    header[1] = (fragId >> 24) & 0xFF;
+    header[2] = (fragId >> 16) & 0xFF;
+    header[3] = (fragId >> 8) & 0xFF;
+    header[4] = fragId & 0xFF;
+    header[5] = ((i & 0x0F) << 4) | (totalFragments & 0x0F);
 
     LoRa.beginPacket();
     LoRa.write(header, LORA_FRAGMENT_HEADER);
@@ -262,11 +264,12 @@ void freeReassemblySlot(int slot) {
  */
 uint8_t* handleLoRaFragment(const uint8_t* data, size_t len, size_t* outLen) {
   if (len < LORA_FRAGMENT_HEADER) return NULL;
+  if (data[0] != LORA_FRAGMENT_MAGIC) return NULL;
 
-  uint32_t fragId = ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) |
-                    ((uint32_t)data[2] << 8) | data[3];
-  uint8_t index = (data[4] >> 4) & 0x0F;
-  uint8_t total = data[4] & 0x0F;
+  uint32_t fragId = ((uint32_t)data[1] << 24) | ((uint32_t)data[2] << 16) |
+                    ((uint32_t)data[3] << 8) | data[4];
+  uint8_t index = (data[5] >> 4) & 0x0F;
+  uint8_t total = data[5] & 0x0F;
 
   if (index >= total || total > 15) return NULL;
 
@@ -630,22 +633,13 @@ void loop() {
     size_t finalLen = 0;
     bool needsFree = false;
 
-    // If packet is larger than header minimum and could be a fragment
-    // We detect fragments by checking if the total size is exactly
-    // LORA_FRAGMENT_HEADER + data, and the nibble encoding makes sense
-    if (bytesRead > LORA_FRAGMENT_HEADER) {
-      uint8_t nibbles = buffer[4];
-      uint8_t idx = (nibbles >> 4) & 0x0F;
-      uint8_t tot = nibbles & 0x0F;
-
-      // Heuristic: if this looks like a fragment header (total > 1, index < total)
-      if (tot > 1 && idx < tot && tot <= 15) {
-        finalPacket = handleLoRaFragment(buffer, bytesRead, &finalLen);
-        needsFree = true;
-        if (finalPacket == NULL) {
-          // Still waiting for more fragments
-          return;
-        }
+    // Fragment handling is explicit via magic marker to prevent false positives.
+    if (bytesRead > LORA_FRAGMENT_HEADER && buffer[0] == LORA_FRAGMENT_MAGIC) {
+      finalPacket = handleLoRaFragment(buffer, bytesRead, &finalLen);
+      needsFree = true;
+      if (finalPacket == NULL) {
+        // Still waiting for more fragments
+        return;
       }
     }
 

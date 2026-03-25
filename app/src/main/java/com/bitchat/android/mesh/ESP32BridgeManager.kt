@@ -11,6 +11,7 @@ import com.bitchat.android.protocol.BinaryProtocol
 import com.bitchat.android.protocol.BitchatPacket
 import com.bitchat.android.model.RoutedPacket
 import kotlinx.coroutines.*
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
@@ -60,6 +61,7 @@ class ESP32BridgeManager(
 
     private var scanJob: Job? = null
     private var reconnectAttempts = 0
+    private val rxAssembleBuffer = ByteArrayOutputStream()
 
     // Queue for packets to send when not yet connected
     private val pendingPackets = ConcurrentLinkedQueue<ByteArray>()
@@ -548,11 +550,20 @@ class ESP32BridgeManager(
         Log.d(TAG, "Received ${data.size} bytes from ESP32 (LoRa)")
 
         try {
-            val packet = BinaryProtocol.decode(data)
+            // ESP32 may split one packet across multiple BLE notifications.
+            if (rxAssembleBuffer.size() + data.size > 8192) {
+                Log.w(TAG, "RX assemble buffer overflow, resetting")
+                rxAssembleBuffer.reset()
+            }
+
+            rxAssembleBuffer.write(data)
+            val assembled = rxAssembleBuffer.toByteArray()
+            val packet = BinaryProtocol.decode(assembled)
             if (packet == null) {
-                Log.w(TAG, "Failed to decode LoRa packet")
+                Log.d(TAG, "Partial/invalid LoRa packet, waiting for more chunks")
                 return
             }
+            rxAssembleBuffer.reset()
 
             // Extract peer ID from sender
             val peerID = packet.senderID
